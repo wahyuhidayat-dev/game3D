@@ -1,0 +1,1791 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberBlitz - Simple FPS</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            color: #0ff;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #hud {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #health {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            font-size: 24px;
+        }
+
+        #ammo {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-size: 24px;
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+        }
+
+        #wave {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+        }
+
+        #power-up {
+            position: absolute;
+            top: 60px;
+            right: 20px;
+            font-size: 20px;
+            color: #ffff00;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+        }
+
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 20;
+        }
+
+        #title {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #0ff;
+        }
+
+        #instructions {
+            text-align: center;
+            margin-bottom: 30px;
+            max-width: 600px;
+        }
+
+        #start-btn {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #0ff;
+            color: #000;
+            border: none;
+            cursor: pointer;
+        }
+
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 20;
+        }
+
+        #restart-btn {
+            padding: 10px 20px;
+            font-size: 18px;
+            background-color: #0ff;
+            color: #000;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="game-container">
+        <div id="hud">
+            <div id="health">HEALTH: 100</div>
+            <div id="ammo">AMMO: 30</div>
+            <div id="score">SCORE: 0</div>
+            <div id="wave">WAVE: 1</div>
+            <div id="power-up"></div>
+            <div id="crosshair">+</div>
+        </div>
+        <div id="start-screen">
+            <h1 id="title">CYBERBLITZ</h1>
+            <div id="instructions">
+                <p>Year 2085: Rogue AI robots have overrun the city.</p>
+                <p>WASD to move, MOUSE to aim, LEFT CLICK to shoot, R to reload, SPACE to jump</p>
+                <p>Look for power-ups to enhance your abilities:</p>
+                <p><span style="color: #00ff00;">Green Octahedron</span> - Rapid Fire: Auto-shoots without clicking</p>
+                <p><span style="color: #ffff00;">Yellow Tetrahedron</span> - Shotgun: Fires 5 bullets in a spread (costs
+                    5 ammo)</p>
+                <p><span style="color: #ff8800;">Orange Cube</span> - Shield: Makes you temporarily invulnerable</p>
+                <p>Beware of different enemy types:</p>
+                <p><span style="color: #ff00ff;">Pink Robots</span> - Standard units, relatively weak</p>
+                <p><span style="color: #8800ff;">Purple Spider-Bots</span> - Faster with multiple eyes, appear from Wave
+                    3</p>
+                <p><span style="color: #88ccff;">Spectral Drones</span> - Ghostly entities that can phase through
+                    obstacles, appear from Wave 2</p>
+                <p><span style="color: #ff0000;">Red Titans</span> - Heavily armored bosses, appear from Wave 5</p>
+            </div>
+            <button id="start-btn">START GAME</button>
+        </div>
+        <div id="game-over">
+            <h1>GAME OVER</h1>
+            <div id="final-score">SCORE: 0</div>
+            <button id="restart-btn">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Game variables
+        let scene, camera, renderer;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let enemies = [];
+        let bullets = [];
+        let powerUps = [];
+        let raycaster;
+        let clock;
+        let shieldMesh = null;
+
+        // Game state
+        let isGameRunning = false;
+        let score = 0;
+        let currentWave = 1;
+        let enemiesRemaining = 0;
+        let playerHealth = 100;
+        let playerAmmo = 30;
+        let maxAmmo = 30;
+        let reloading = false;
+
+        // Power-up state
+        let activePowerUp = null;
+        let powerUpTimeRemaining = 0;
+        let rapidFireInterval = null;
+
+        // Colors
+        const neonBlue = 0x00ffff;
+        const neonPink = 0xff00ff;
+        const neonGreen = 0x00ff00;
+        const neonYellow = 0xffff00;
+        const neonOrange = 0xff8800;
+        const neonRed = 0xff0000;
+        const neonPurple = 0x8800ff;
+        const ghostBlue = 0x88ccff;
+
+        // Initialize the game
+        function init() {
+            // Setup scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+            // Setup camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 1.6; // Player height
+
+            // Setup renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('game-container').appendChild(renderer.domElement);
+
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Add some colored lights
+            const blueLight = new THREE.PointLight(neonBlue, 1, 50);
+            blueLight.position.set(10, 5, 10);
+            scene.add(blueLight);
+
+            const pinkLight = new THREE.PointLight(neonPink, 1, 50);
+            pinkLight.position.set(-10, 5, -10);
+            scene.add(pinkLight);
+
+            // Create environment
+            createEnvironment();
+
+            // Setup controls
+            setupControls();
+
+            // Setup raycaster for shooting
+            raycaster = new THREE.Raycaster();
+
+            // Setup clock
+            clock = new THREE.Clock();
+
+            // Set up event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('start-btn').addEventListener('click', startGame);
+            document.getElementById('restart-btn').addEventListener('click', restartGame);
+
+            // Start animation loop
+            animate();
+        }
+
+        function createEnvironment() {
+            // Create floor
+            const floorGeometry = new THREE.PlaneGeometry(100, 100);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x333333,
+                roughness: 0.8
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = 0;
+            scene.add(floor);
+
+            // Create some buildings
+            createBuilding(10, 5, 10, new THREE.Vector3(15, 2.5, 15), neonBlue);
+            createBuilding(10, 8, 8, new THREE.Vector3(-15, 4, -15), neonPink);
+            createBuilding(8, 6, 12, new THREE.Vector3(-15, 3, 15), neonBlue);
+            createBuilding(12, 10, 6, new THREE.Vector3(15, 5, -15), neonPink);
+
+            // Create boundary walls
+            createBuilding(100, 10, 1, new THREE.Vector3(0, 5, -50), 0x222222);
+            createBuilding(100, 10, 1, new THREE.Vector3(0, 5, 50), 0x222222);
+            createBuilding(1, 10, 100, new THREE.Vector3(-50, 5, 0), 0x222222);
+            createBuilding(1, 10, 100, new THREE.Vector3(50, 5, 0), 0x222222);
+        }
+
+        function createBuilding(width, height, depth, position, color) {
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.2
+            });
+
+            const building = new THREE.Mesh(geometry, material);
+            building.position.copy(position);
+            scene.add(building);
+
+            // Add wireframe edges
+            const edges = new THREE.EdgesGeometry(geometry);
+            const lineMaterial = new THREE.LineBasicMaterial({ color: color });
+            const wireframe = new THREE.LineSegments(edges, lineMaterial);
+            building.add(wireframe);
+
+            return building;
+        }
+
+        function setupControls() {
+            // Keyboard controls
+            document.addEventListener('keydown', (event) => {
+                if (!isGameRunning) return;
+
+                switch (event.code) {
+                    case 'KeyW':
+                        moveForward = true;
+                        break;
+                    case 'KeyS':
+                        moveBackward = true;
+                        break;
+                    case 'KeyA':
+                        moveLeft = true;
+                        break;
+                    case 'KeyD':
+                        moveRight = true;
+                        break;
+                    case 'KeyR':
+                        reload();
+                        break;
+                }
+            });
+
+            document.addEventListener('keyup', (event) => {
+                switch (event.code) {
+                    case 'KeyW':
+                        moveForward = false;
+                        break;
+                    case 'KeyS':
+                        moveBackward = false;
+                        break;
+                    case 'KeyA':
+                        moveLeft = false;
+                        break;
+                    case 'KeyD':
+                        moveRight = false;
+                        break;
+                }
+            });
+
+            // Mouse controls
+            document.addEventListener('mousedown', (event) => {
+                if (!isGameRunning) return;
+
+                if (event.button === 0) { // Left mouse button
+                    shoot();
+                }
+            });
+
+            // Pointer lock for mouse look
+            renderer.domElement.addEventListener('click', () => {
+                if (isGameRunning) {
+                    renderer.domElement.requestPointerLock();
+                }
+            });
+
+            document.addEventListener('mousemove', (event) => {
+                if (!isGameRunning) return;
+
+                if (document.pointerLockElement === renderer.domElement) {
+                    // Use a completely different approach with quaternions for more natural camera control
+
+                    // Get the movement deltas
+                    const movementX = event.movementX || 0;
+                    const movementY = event.movementY || 0;
+
+                    // Set the sensitivity (adjust as needed)
+                    const sensitivity = 0.002;
+
+                    // Create rotation quaternions for both axes
+                    const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+                        new THREE.Vector3(0, 1, 0), // Y-axis for horizontal rotation
+                        -movementX * sensitivity // Negative for correct direction
+                    );
+
+                    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+                        new THREE.Vector3(1, 0, 0), // X-axis for vertical rotation
+                        -movementY * sensitivity // Negative for correct direction
+                    );
+
+                    // Apply yaw rotation (around world Y axis)
+                    camera.quaternion.premultiply(yawQuat);
+
+                    // Get the current pitch angle
+                    const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+                    let pitch = euler.x;
+
+                    // Apply pitch rotation with limits
+                    pitch -= movementY * sensitivity;
+                    pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
+
+                    // Update camera rotation with the new pitch
+                    euler.x = pitch;
+                    camera.quaternion.setFromEuler(euler);
+                }
+            });
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            isGameRunning = true;
+
+            // Reset game state
+            score = 0;
+            currentWave = 1;
+            playerHealth = 100;
+            playerAmmo = maxAmmo;
+
+            // Clear any active power-ups
+            clearActivePowerUp();
+
+            // Update HUD
+            updateHUD();
+
+            // Spawn enemies for the first wave
+            spawnEnemiesForWave();
+
+            // Spawn initial power-ups
+            spawnPowerUps();
+
+            // Request pointer lock
+            renderer.domElement.requestPointerLock();
+        }
+
+        function restartGame() {
+            document.getElementById('game-over').style.display = 'none';
+
+            // Clear existing enemies and bullets
+            enemies.forEach(enemy => scene.remove(enemy.mesh));
+            enemies = [];
+
+            bullets.forEach(bullet => scene.remove(bullet.mesh));
+            bullets = [];
+
+            // Clear power-ups
+            powerUps.forEach(powerUp => scene.remove(powerUp.mesh));
+            powerUps = [];
+
+            // Reset player position
+            camera.position.set(0, 1.6, 0);
+            camera.rotation.set(0, 0, 0);
+
+            startGame();
+        }
+
+        function spawnEnemiesForWave() {
+            const enemyCount = currentWave * 3;
+            enemiesRemaining = enemyCount;
+
+            for (let i = 0; i < enemyCount; i++) {
+                // Random position away from player
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 15 + Math.random() * 15; // 15-30 units away
+
+                const x = Math.sin(angle) * distance;
+                const z = Math.cos(angle) * distance;
+
+                // Determine enemy type based on wave and randomness
+                let enemyType;
+                const typeRoll = Math.random();
+
+                if (currentWave >= 5 && typeRoll < 0.2) {
+                    // 20% chance for boss enemies in wave 5+
+                    enemyType = 'boss';
+                } else if (currentWave >= 3 && typeRoll < 0.3) {
+                    // 30% chance for advanced enemies in wave 3+
+                    enemyType = 'advanced';
+                } else if (currentWave >= 2 && typeRoll < 0.4) {
+                    // 40% chance for ghost enemies in wave 2+
+                    enemyType = 'ghost';
+                } else {
+                    // Regular enemies
+                    enemyType = 'regular';
+                }
+
+                spawnEnemy(x, z, enemyType);
+            }
+
+            // Spawn new power-ups with each wave
+            spawnPowerUps();
+        }
+
+        function spawnEnemy(x, z, type = 'regular') {
+            let mesh, health, speed, scoreValue;
+
+            // Create enemy based on type
+            if (type === 'regular') {
+                // Regular enemy - Standard robot
+                mesh = createRegularEnemy();
+                health = 50;
+                speed = 2 + Math.random(); // 2-3 speed
+                scoreValue = 100;
+            } else if (type === 'advanced') {
+                // Advanced enemy - Spider-like robot
+                mesh = createAdvancedEnemy();
+                health = 75;
+                speed = 3 + Math.random(); // 3-4 speed
+                scoreValue = 200;
+            } else if (type === 'ghost') {
+                // Ghost enemy - Floating spectral entity
+                mesh = createGhostEnemy();
+                health = 40;
+                speed = 2.5 + Math.random() * 1.5; // 2.5-4 speed (variable)
+                scoreValue = 150;
+            } else if (type === 'boss') {
+                // Boss enemy - Large, menacing robot
+                mesh = createBossEnemy();
+                health = 200;
+                speed = 1.5 + Math.random() * 0.5; // 1.5-2 speed (slower but stronger)
+                scoreValue = 500;
+            }
+
+            // Position enemy
+            mesh.position.set(x, 1, z);
+            scene.add(mesh);
+
+            // Add to enemies array
+            enemies.push({
+                mesh: mesh,
+                health: health,
+                speed: speed,
+                type: type,
+                scoreValue: scoreValue,
+                lastAttack: 0,
+                attackDamage: type === 'boss' ? 25 : (type === 'advanced' ? 15 : (type === 'ghost' ? 8 : 10)),
+                // Special properties for ghost enemies
+                floatHeight: type === 'ghost' ? 1 + Math.random() * 2 : 0, // Random float height
+                floatPhase: type === 'ghost' ? Math.random() * Math.PI * 2 : 0 // Random phase for floating
+            });
+        }
+
+        function createRegularEnemy() {
+            // Create basic robot enemy
+            const bodyGeometry = new THREE.BoxGeometry(1, 2, 1);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: neonPink,
+                emissive: neonPink,
+                emissiveIntensity: 0.5
+            });
+
+            const mesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+
+            // Add glowing eyes
+            const eyeGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(0.2, 0.5, 0.5);
+            mesh.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(-0.2, 0.5, 0.5);
+            mesh.add(rightEye);
+
+            return mesh;
+        }
+
+        function createAdvancedEnemy() {
+            // Create spider-like robot enemy
+            const group = new THREE.Group();
+
+            // Body
+            const bodyGeometry = new THREE.SphereGeometry(0.7, 16, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: neonPurple,
+                emissive: neonPurple,
+                emissiveIntensity: 0.6,
+                roughness: 0.3
+            });
+
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 0.7;
+            group.add(body);
+
+            // Eyes (multiple glowing eyes for creepy effect)
+            const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({ color: neonRed });
+
+            // Create 6 eyes in a circular pattern
+            for (let i = 0; i < 6; i++) {
+                const angle = (i / 6) * Math.PI * 2;
+                const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+                eye.position.set(
+                    Math.sin(angle) * 0.3,
+                    0.8 + Math.cos(angle) * 0.2,
+                    0.5
+                );
+                group.add(eye);
+            }
+
+            // Legs (8 spider-like legs)
+            const legGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.2);
+            const legMaterial = new THREE.MeshStandardMaterial({
+                color: neonPurple,
+                emissive: neonPurple,
+                emissiveIntensity: 0.4
+            });
+
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const legGroup = new THREE.Group();
+
+                const leg = new THREE.Mesh(legGeometry, legMaterial);
+                leg.rotation.x = Math.PI / 2;
+                leg.position.y = -0.5;
+
+                legGroup.add(leg);
+                legGroup.position.set(
+                    Math.sin(angle) * 0.7,
+                    0.3,
+                    Math.cos(angle) * 0.7
+                );
+
+                // Rotate legs outward
+                legGroup.rotation.z = -angle;
+                legGroup.rotation.x = Math.PI / 4;
+
+                group.add(legGroup);
+            }
+
+            return group;
+        }
+
+        function createBossEnemy() {
+            // Create large, menacing robot boss
+            const group = new THREE.Group();
+
+            // Main body
+            const bodyGeometry = new THREE.BoxGeometry(2, 3, 1.5);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: neonRed,
+                emissive: neonRed,
+                emissiveIntensity: 0.7,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.position.y = 1.5;
+            group.add(body);
+
+            // Head
+            const headGeometry = new THREE.BoxGeometry(1.5, 1, 1.2);
+            const headMaterial = new THREE.MeshStandardMaterial({
+                color: neonRed,
+                emissive: neonRed,
+                emissiveIntensity: 0.7,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 3.5;
+            group.add(head);
+
+            // Glowing visor instead of eyes
+            const visorGeometry = new THREE.BoxGeometry(1.2, 0.2, 0.1);
+            const visorMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                emissive: 0xffffff,
+                emissiveIntensity: 1
+            });
+
+            const visor = new THREE.Mesh(visorGeometry, visorMaterial);
+            visor.position.set(0, 3.5, 0.7);
+            group.add(visor);
+
+            // Shoulder pads
+            const shoulderGeometry = new THREE.SphereGeometry(0.6, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const shoulderMaterial = new THREE.MeshStandardMaterial({
+                color: neonRed,
+                emissive: neonRed,
+                emissiveIntensity: 0.5
+            });
+
+            const leftShoulder = new THREE.Mesh(shoulderGeometry, shoulderMaterial);
+            leftShoulder.position.set(1.3, 2.8, 0);
+            leftShoulder.rotation.z = Math.PI / 2;
+            group.add(leftShoulder);
+
+            const rightShoulder = new THREE.Mesh(shoulderGeometry, shoulderMaterial);
+            rightShoulder.position.set(-1.3, 2.8, 0);
+            rightShoulder.rotation.z = -Math.PI / 2;
+            group.add(rightShoulder);
+
+            // Arms
+            const armGeometry = new THREE.CylinderGeometry(0.25, 0.25, 2);
+            const armMaterial = new THREE.MeshStandardMaterial({
+                color: neonRed,
+                emissive: neonRed,
+                emissiveIntensity: 0.5
+            });
+
+            const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+            leftArm.position.set(1.5, 1.8, 0);
+            group.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+            rightArm.position.set(-1.5, 1.8, 0);
+            group.add(rightArm);
+
+            // Weapon (on right arm)
+            const weaponGeometry = new THREE.CylinderGeometry(0.2, 0.3, 1);
+            const weaponMaterial = new THREE.MeshStandardMaterial({
+                color: 0x333333,
+                metalness: 0.9,
+                roughness: 0.1
+            });
+
+            const weapon = new THREE.Mesh(weaponGeometry, weaponMaterial);
+            weapon.position.set(-1.5, 0.5, 0.5);
+            weapon.rotation.x = Math.PI / 2;
+            group.add(weapon);
+
+            // Add pulsing effect for the boss
+            const pulseLight = new THREE.PointLight(neonRed, 1, 3);
+            pulseLight.position.set(0, 2, 0);
+            group.add(pulseLight);
+
+            // Store the light in the group for animation
+            group.userData.pulseLight = pulseLight;
+
+            return group;
+        }
+
+        function createGhostEnemy() {
+            // Create ghostly floating enemy
+            const group = new THREE.Group();
+
+            // Main body - semi-transparent
+            const bodyGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({
+                color: ghostBlue,
+                emissive: ghostBlue,
+                emissiveIntensity: 0.9,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+
+            // Trailing wisps
+            for (let i = 0; i < 5; i++) {
+                const wispGeometry = new THREE.SphereGeometry(0.4 - i * 0.06, 8, 8);
+                const wispMaterial = new THREE.MeshStandardMaterial({
+                    color: ghostBlue,
+                    emissive: ghostBlue,
+                    emissiveIntensity: 0.7,
+                    transparent: true,
+                    opacity: 0.6 - i * 0.08
+                });
+
+                const wisp = new THREE.Mesh(wispGeometry, wispMaterial);
+                wisp.position.y = -0.3 - i * 0.2;
+                group.add(wisp);
+            }
+
+            // Glowing eyes - made larger and more visible
+            const eyeGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+            const eyeMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                transparent: true,
+                opacity: 1.0
+            });
+
+            const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            leftEye.position.set(0.25, 0.1, 0.5);
+            group.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+            rightEye.position.set(-0.25, 0.1, 0.5);
+            group.add(rightEye);
+
+            // Add a subtle glow effect - increased intensity
+            const glowLight = new THREE.PointLight(ghostBlue, 1.5, 3);
+            glowLight.position.set(0, 0, 0);
+            group.add(glowLight);
+
+            // Add an outer glow shell
+            const outerGlowGeometry = new THREE.SphereGeometry(1.2, 16, 16);
+            const outerGlowMaterial = new THREE.MeshBasicMaterial({
+                color: ghostBlue,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.BackSide
+            });
+
+            const outerGlow = new THREE.Mesh(outerGlowGeometry, outerGlowMaterial);
+            group.add(outerGlow);
+
+            // Add a larger invisible hit area for better hit detection
+            const hitAreaGeometry = new THREE.SphereGeometry(1.5, 8, 8);
+            const hitAreaMaterial = new THREE.MeshBasicMaterial({
+                visible: false,
+                transparent: true,
+                opacity: 0
+            });
+
+            const hitArea = new THREE.Mesh(hitAreaGeometry, hitAreaMaterial);
+            group.add(hitArea);
+            group.userData.hitArea = hitArea;
+
+            // Store the light in the group for animation
+            group.userData.glowLight = glowLight;
+            group.userData.outerGlow = outerGlow;
+
+            return group;
+        }
+
+        function shoot() {
+            if (reloading || playerAmmo <= 0) {
+                if (playerAmmo <= 0) {
+                    reload();
+                }
+                return;
+            }
+
+            // Check for shotgun power-up
+            if (activePowerUp === 'shotgun') {
+                shotgunBlast();
+                return;
+            }
+
+            // Decrease ammo
+            playerAmmo--;
+            updateHUD();
+
+            // Create bullet visual
+            const bulletGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const bulletMaterial = new THREE.MeshBasicMaterial({ color: neonBlue });
+            const bulletMesh = new THREE.Mesh(bulletGeometry, bulletMaterial);
+
+            // Position bullet at camera
+            bulletMesh.position.copy(camera.position);
+
+            // Get shooting direction
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+
+            scene.add(bulletMesh);
+
+            // Add to bullets array
+            bullets.push({
+                mesh: bulletMesh,
+                direction: direction,
+                distance: 0
+            });
+
+            // Use raycaster for instant hit detection
+            raycaster.setFromCamera(new THREE.Vector2(), camera);
+
+            // Create an array of objects to test for intersection
+            const hitTestObjects = [];
+
+            // Add all enemy meshes and their children to the hit test array
+            enemies.forEach((enemy, index) => {
+                // For regular enemies, just add the mesh
+                if (enemy.type === 'regular') {
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+                }
+                // For ghost enemies, add all meshes and create a larger hit area
+                else if (enemy.type === 'ghost') {
+                    // Add the parent group
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+
+                    // Add all children with a reference to the same enemy index
+                    enemy.mesh.children.forEach(child => {
+                        if (child.isMesh) {
+                            hitTestObjects.push({
+                                object: child,
+                                enemyIndex: index
+                            });
+                        }
+                    });
+
+                    // Add the hit area if it exists
+                    if (enemy.mesh.userData.hitArea) {
+                        hitTestObjects.push({
+                            object: enemy.mesh.userData.hitArea,
+                            enemyIndex: index
+                        });
+                    }
+                }
+                // For other enemy types (advanced, boss), add all children that have geometry
+                else {
+                    // Add the parent group with a reference to the enemy index
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+
+                    // Add all children with a reference to the same enemy index
+                    enemy.mesh.children.forEach(child => {
+                        if (child.isMesh) {
+                            hitTestObjects.push({
+                                object: child,
+                                enemyIndex: index
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Extract just the objects for the raycaster
+            const objectsToTest = hitTestObjects.map(item => item.object);
+
+            // Perform the raycaster intersection test
+            const hits = raycaster.intersectObjects(objectsToTest, true); // Set to true to check descendants
+
+            if (hits.length > 0) {
+                const hit = hits[0];
+
+                // Find which enemy was hit by looking up the object in our hitTestObjects array
+                const hitInfo = hitTestObjects.find(item =>
+                    item.object === hit.object ||
+                    (hit.object.parent && item.object === hit.object.parent) ||
+                    // Check if the hit object is a child of any of our test objects
+                    (hit.object.parent && hit.object.parent.parent &&
+                        item.object === hit.object.parent.parent)
+                );
+
+                if (hitInfo) {
+                    damageEnemy(hitInfo.enemyIndex, 25); // 25 damage per hit
+                }
+            }
+        }
+
+        function reload() {
+            if (reloading || playerAmmo === maxAmmo) return;
+
+            reloading = true;
+            document.getElementById('ammo').textContent = 'RELOADING...';
+
+            // Reload after delay
+            setTimeout(() => {
+                playerAmmo = maxAmmo;
+                reloading = false;
+                updateHUD();
+            }, 1500);
+        }
+
+        function damageEnemy(index, damage) {
+            const enemy = enemies[index];
+            enemy.health -= damage;
+
+            // Flash enemy when hit
+            if (enemy.type !== 'ghost') {
+                enemy.mesh.material.emissiveIntensity = 1;
+                setTimeout(() => {
+                    if (enemies[index]) {
+                        enemies[index].mesh.material.emissiveIntensity = 0.5;
+                    }
+                }, 100);
+            } else {
+                // For ghost enemies, flash all child meshes
+                enemy.mesh.children.forEach(child => {
+                    if (child.material && child.material.emissiveIntensity) {
+                        const originalIntensity = child.material.emissiveIntensity;
+                        child.material.emissiveIntensity = 1;
+                        setTimeout(() => {
+                            if (enemies[index]) {
+                                child.material.emissiveIntensity = originalIntensity;
+                            }
+                        }, 100);
+                    }
+                });
+
+                // Add a visual hit effect for ghost enemies to make hits more obvious
+                const hitPosition = enemy.mesh.position.clone();
+
+                // Create a bright flash
+                const hitEffect = new THREE.PointLight(0xffffff, 3, 5);
+                hitEffect.position.copy(hitPosition);
+                scene.add(hitEffect);
+
+                // Create a visible impact marker
+                const impactGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+                const impactMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const impactMesh = new THREE.Mesh(impactGeometry, impactMaterial);
+                impactMesh.position.copy(hitPosition);
+                scene.add(impactMesh);
+
+                // Animate and remove the impact effect
+                const startTime = Date.now();
+                const duration = 300; // 300ms
+
+                function animateImpact() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+
+                    if (progress < 1) {
+                        // Scale down and fade out
+                        const scale = 1 - progress;
+                        impactMesh.scale.set(scale, scale, scale);
+                        impactMesh.material.opacity = 0.8 * (1 - progress);
+                        hitEffect.intensity = 3 * (1 - progress);
+
+                        requestAnimationFrame(animateImpact);
+                    } else {
+                        // Remove when animation is complete
+                        scene.remove(impactMesh);
+                        scene.remove(hitEffect);
+                    }
+                }
+
+                animateImpact();
+
+                // Also display damage number
+                const damageText = document.createElement('div');
+                damageText.textContent = `-${damage}`;
+                damageText.style.position = 'absolute';
+                damageText.style.color = '#ffffff';
+                damageText.style.fontSize = '20px';
+                damageText.style.fontWeight = 'bold';
+                damageText.style.textShadow = '0 0 5px #88ccff';
+                damageText.style.pointerEvents = 'none';
+
+                // Convert 3D position to screen position
+                const screenPosition = hitPosition.clone();
+                screenPosition.project(camera);
+
+                damageText.style.left = (screenPosition.x * 0.5 + 0.5) * window.innerWidth + 'px';
+                damageText.style.top = (-screenPosition.y * 0.5 + 0.5) * window.innerHeight + 'px';
+
+                document.body.appendChild(damageText);
+
+                // Animate and remove the damage text
+                let textStartY = parseFloat(damageText.style.top);
+                const textStartTime = Date.now();
+                const textDuration = 800; // 800ms
+
+                function animateDamageText() {
+                    const elapsed = Date.now() - textStartTime;
+                    const progress = Math.min(elapsed / textDuration, 1);
+
+                    if (progress < 1) {
+                        // Move upward and fade out
+                        damageText.style.top = (textStartY - progress * 50) + 'px';
+                        damageText.style.opacity = 1 - progress;
+
+                        requestAnimationFrame(animateDamageText);
+                    } else {
+                        // Remove when animation is complete
+                        document.body.removeChild(damageText);
+                    }
+                }
+
+                animateDamageText();
+            }
+
+            if (enemy.health <= 0) {
+                // Enemy defeated - play death animation based on type
+                playEnemyDeathAnimation(enemy);
+
+                // Add score based on enemy type
+                score += enemy.scoreValue;
+                updateHUD();
+
+                // Check if wave is complete
+                enemiesRemaining--;
+                if (enemiesRemaining <= 0) {
+                    // Next wave
+                    currentWave++;
+                    updateHUD();
+                    spawnEnemiesForWave();
+                }
+            }
+        }
+
+        // Array to store animated debris for death animations
+        let animatedDebris = [];
+
+        function playEnemyDeathAnimation(enemy) {
+            const position = enemy.mesh.position.clone();
+            const type = enemy.type;
+
+            // Remove the enemy from the scene and array
+            const index = enemies.indexOf(enemy);
+            scene.remove(enemy.mesh);
+            enemies.splice(index, 1);
+
+            // Create explosion effect based on enemy type
+            if (type === 'regular') {
+                // Regular robot explosion - pink particles
+                createExplosion(position, neonPink, 15, 0.15);
+            } else if (type === 'advanced') {
+                // Spider robot explosion - purple particles with legs flying off
+                createExplosion(position, neonPurple, 20, 0.2);
+
+                // Create flying leg parts
+                for (let i = 0; i < 8; i++) {
+                    const legGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.6);
+                    const legMaterial = new THREE.MeshStandardMaterial({
+                        color: neonPurple,
+                        emissive: neonPurple,
+                        emissiveIntensity: 0.4
+                    });
+
+                    const leg = new THREE.Mesh(legGeometry, legMaterial);
+                    leg.position.copy(position);
+
+                    // Random direction
+                    const direction = new THREE.Vector3(
+                        Math.random() * 2 - 1,
+                        Math.random() * 2,
+                        Math.random() * 2 - 1
+                    ).normalize();
+
+                    scene.add(leg);
+
+                    // Animate leg flying off
+                    const speed = 2 + Math.random() * 3;
+                    const rotationSpeed = Math.random() * 10;
+
+                    // Store animation data
+                    leg.userData = {
+                        direction: direction,
+                        speed: speed,
+                        rotationSpeed: rotationSpeed,
+                        lifetime: 1 + Math.random()
+                    };
+
+                    // Add to animation array
+                    animatedDebris.push(leg);
+                }
+            } else if (type === 'ghost') {
+                // Ghost dissipation - fade out with blue wisps
+                createExplosion(position, ghostBlue, 10, 0.3, true);
+
+                // Create fading ghost remnant
+                const ghostRemnant = new THREE.Group();
+
+                // Main body - semi-transparent
+                const bodyGeometry = new THREE.SphereGeometry(0.8, 16, 16);
+                const bodyMaterial = new THREE.MeshStandardMaterial({
+                    color: ghostBlue,
+                    emissive: ghostBlue,
+                    emissiveIntensity: 0.9,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+                ghostRemnant.add(body);
+
+                ghostRemnant.position.copy(position);
+                scene.add(ghostRemnant);
+
+                // Store animation data
+                ghostRemnant.userData = {
+                    initialOpacity: 0.8,
+                    lifetime: 1.5,
+                    isGhostRemnant: true
+                };
+
+                // Add to animation array
+                animatedDebris.push(ghostRemnant);
+            } else if (type === 'boss') {
+                // Boss explosion - large red explosion with multiple shockwaves
+                createExplosion(position, neonRed, 30, 0.25);
+
+                // Create shockwave
+                const shockwaveGeometry = new THREE.RingGeometry(0.5, 0.6, 32);
+                const shockwaveMaterial = new THREE.MeshBasicMaterial({
+                    color: neonRed,
+                    transparent: true,
+                    opacity: 0.7,
+                    side: THREE.DoubleSide
+                });
+
+                const shockwave = new THREE.Mesh(shockwaveGeometry, shockwaveMaterial);
+                shockwave.rotation.x = Math.PI / 2; // Lay flat
+                shockwave.position.copy(position);
+                scene.add(shockwave);
+
+                // Store animation data
+                shockwave.userData = {
+                    initialScale: 0.1,
+                    targetScale: 10,
+                    lifetime: 1.5,
+                    isShockwave: true
+                };
+
+                // Add to animation array
+                animatedDebris.push(shockwave);
+
+                // Create secondary explosion after a delay
+                setTimeout(() => {
+                    createExplosion(position, 0xffff00, 20, 0.3);
+                }, 300);
+            }
+        }
+
+        function createExplosion(position, color, particleCount, size, fadeUp = false) {
+            for (let i = 0; i < particleCount; i++) {
+                const particleGeometry = new THREE.SphereGeometry(size, 8, 8);
+                const particleMaterial = new THREE.MeshBasicMaterial({
+                    color: color,
+                    transparent: true,
+                    opacity: fadeUp ? 0.1 : 0.8
+                });
+
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+                particle.position.copy(position);
+
+                // Random direction
+                const direction = new THREE.Vector3(
+                    Math.random() * 2 - 1,
+                    Math.random() * 2 - 1,
+                    Math.random() * 2 - 1
+                ).normalize();
+
+                scene.add(particle);
+
+                // Animate particle
+                const speed = 1 + Math.random() * 5;
+
+                // Store animation data
+                particle.userData = {
+                    direction: direction,
+                    speed: speed,
+                    lifetime: 1 + Math.random(),
+                    fadeUp: fadeUp
+                };
+
+                // Add to animation array
+                animatedDebris.push(particle);
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('health').textContent = `HEALTH: ${playerHealth}`;
+            document.getElementById('ammo').textContent = `AMMO: ${playerAmmo}`;
+            document.getElementById('score').textContent = `SCORE: ${score}`;
+            document.getElementById('wave').textContent = `WAVE: ${currentWave}`;
+
+            // Update power-up display if active
+            const powerUpElement = document.getElementById('power-up');
+            if (activePowerUp) {
+                const timeLeft = Math.ceil(powerUpTimeRemaining);
+                let color;
+                if (activePowerUp === 'rapidfire') {
+                    color = '#00ff00';
+                } else if (activePowerUp === 'shotgun') {
+                    color = '#ffff00';
+                } else if (activePowerUp === 'shield') {
+                    color = '#ff8800';
+                }
+                powerUpElement.innerHTML = `<span style="color: ${color}">${activePowerUp.toUpperCase()}</span> ACTIVE (${timeLeft}s)`;
+            } else {
+                powerUpElement.textContent = '';
+            }
+        }
+
+        function gameOver() {
+            isGameRunning = false;
+            document.exitPointerLock();
+
+            document.getElementById('final-score').textContent = `FINAL SCORE: ${score}`;
+            document.getElementById('game-over').style.display = 'flex';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            if (isGameRunning) {
+                // Update power-up timer
+                if (activePowerUp && powerUpTimeRemaining > 0) {
+                    powerUpTimeRemaining -= delta;
+                    updateHUD();
+
+                    // Pulse shield effect if active
+                    if (activePowerUp === 'shield' && shieldMesh) {
+                        const pulse = 0.3 + Math.sin(Date.now() * 0.005) * 0.1;
+                        shieldMesh.material.opacity = pulse;
+                    }
+
+                    if (powerUpTimeRemaining <= 0) {
+                        clearActivePowerUp();
+                    }
+                }
+
+                // Update animated debris (death animations)
+                for (let i = animatedDebris.length - 1; i >= 0; i--) {
+                    const debris = animatedDebris[i];
+
+                    // Decrease lifetime
+                    debris.userData.lifetime -= delta;
+
+                    if (debris.userData.lifetime <= 0) {
+                        // Remove when lifetime is over
+                        scene.remove(debris);
+                        animatedDebris.splice(i, 1);
+                        continue;
+                    }
+
+                    // Handle different types of debris
+                    if (debris.userData.isShockwave) {
+                        // Expand shockwave
+                        const progress = 1 - (debris.userData.lifetime / 1.5);
+                        const scale = debris.userData.initialScale + (debris.userData.targetScale - debris.userData.initialScale) * progress;
+                        debris.scale.set(scale, scale, scale);
+
+                        // Fade out
+                        debris.material.opacity = 0.7 * (1 - progress);
+                    } else if (debris.userData.isGhostRemnant) {
+                        // Fade out ghost remnant and float upward
+                        const progress = 1 - (debris.userData.lifetime / 1.5);
+
+                        // Fade out all children
+                        debris.children.forEach(child => {
+                            if (child.material) {
+                                child.material.opacity = debris.userData.initialOpacity * (1 - progress);
+                            }
+                        });
+
+                        // Float upward
+                        debris.position.y += delta * 2;
+                    } else {
+                        // Regular debris movement
+                        debris.position.add(debris.userData.direction.clone().multiplyScalar(debris.userData.speed * delta));
+
+                        // Rotate debris
+                        if (debris.userData.rotationSpeed) {
+                            debris.rotation.x += debris.userData.rotationSpeed * delta;
+                            debris.rotation.z += debris.userData.rotationSpeed * delta;
+                        }
+
+                        // Fade particles
+                        if (debris.material) {
+                            if (debris.userData.fadeUp) {
+                                // Fade up then down
+                                const halfLife = 0.5;
+                                const progress = 1 - (debris.userData.lifetime / (1 + Math.random()));
+
+                                if (progress < halfLife) {
+                                    // Fade up
+                                    debris.material.opacity = 0.1 + (progress / halfLife) * 0.7;
+                                } else {
+                                    // Fade down
+                                    debris.material.opacity = 0.8 * (1 - ((progress - halfLife) / (1 - halfLife)));
+                                }
+                            } else {
+                                // Just fade out
+                                const progress = 1 - (debris.userData.lifetime / (1 + Math.random()));
+                                debris.material.opacity = 0.8 * (1 - progress);
+                            }
+                        }
+                    }
+                }
+
+                // Update player movement
+                const speed = 5;
+
+                // Get camera direction
+                const direction = new THREE.Vector3();
+                camera.getWorldDirection(direction);
+
+                // Calculate forward and right vectors
+                const forward = new THREE.Vector3(direction.x, 0, direction.z).normalize();
+                const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+                // Apply movement
+                if (moveForward) {
+                    camera.position.add(forward.multiplyScalar(speed * delta));
+                }
+                if (moveBackward) {
+                    camera.position.add(forward.multiplyScalar(-speed * delta));
+                }
+                if (moveLeft) {
+                    camera.position.add(right.multiplyScalar(-speed * delta));
+                }
+                if (moveRight) {
+                    camera.position.add(right.multiplyScalar(speed * delta));
+                }
+
+                // Keep player inside boundaries
+                camera.position.x = Math.max(-49, Math.min(49, camera.position.x));
+                camera.position.z = Math.max(-49, Math.min(49, camera.position.z));
+
+                // Update bullets
+                for (let i = bullets.length - 1; i >= 0; i--) {
+                    const bullet = bullets[i];
+
+                    // Move bullet
+                    const bulletSpeed = 30;
+                    bullet.mesh.position.add(bullet.direction.clone().multiplyScalar(bulletSpeed * delta));
+
+                    // Track distance
+                    bullet.distance += bulletSpeed * delta;
+
+                    // Remove bullet if it's traveled too far
+                    if (bullet.distance > 50) {
+                        scene.remove(bullet.mesh);
+                        bullets.splice(i, 1);
+                    }
+                }
+
+                // Update enemies
+                for (let i = 0; i < enemies.length; i++) {
+                    const enemy = enemies[i];
+
+                    // Move enemy towards player
+                    const direction = new THREE.Vector3();
+                    direction.subVectors(camera.position, enemy.mesh.position).normalize();
+
+                    // Keep enemy upright (except for ghost type)
+                    if (enemy.type !== 'ghost') {
+                        direction.y = 0;
+                    }
+
+                    // Move enemy
+                    enemy.mesh.position.add(direction.multiplyScalar(enemy.speed * delta));
+
+                    // Make enemy face player
+                    enemy.mesh.lookAt(new THREE.Vector3(camera.position.x, enemy.mesh.position.y, camera.position.z));
+
+                    // Special effects for different enemy types
+                    if (enemy.type === 'advanced') {
+                        // Make spider legs move
+                        enemy.mesh.children.forEach((child, index) => {
+                            if (index > 1) { // Skip body and eyes
+                                child.rotation.x = Math.PI / 4 + Math.sin(Date.now() * 0.01 + index) * 0.2;
+                            }
+                        });
+                    } else if (enemy.type === 'boss') {
+                        // Pulse the boss's light
+                        if (enemy.mesh.userData.pulseLight) {
+                            const intensity = 1 + Math.sin(Date.now() * 0.005) * 0.5;
+                            enemy.mesh.userData.pulseLight.intensity = intensity;
+                        }
+                    } else if (enemy.type === 'ghost') {
+                        // Floating movement for ghost enemies
+                        const floatHeight = enemy.floatHeight;
+                        const floatPhase = enemy.floatPhase;
+
+                        // Make ghost float up and down
+                        enemy.mesh.position.y = floatHeight + Math.sin(Date.now() * 0.002 + floatPhase) * 0.5;
+
+                        // Make ghost slightly transparent and pulsing
+                        enemy.mesh.children.forEach((child, index) => {
+                            if (child.material && child.material.opacity) {
+                                const baseOpacity = index === 0 ? 0.7 : (0.5 - index * 0.08);
+                                child.material.opacity = baseOpacity + Math.sin(Date.now() * 0.003) * 0.1;
+                            }
+                        });
+
+                        // Pulse the ghost's light
+                        if (enemy.mesh.userData.glowLight) {
+                            const intensity = 1 + Math.sin(Date.now() * 0.006) * 0.3;
+                            enemy.mesh.userData.glowLight.intensity = intensity;
+                        }
+                    }
+
+                    // Check distance to player
+                    const distance = enemy.mesh.position.distanceTo(camera.position);
+
+                    // Enemy attack
+                    if (distance < 2) {
+                        const now = Date.now();
+                        const attackCooldown = enemy.type === 'advanced' ? 800 : (enemy.type === 'boss' ? 1500 : (enemy.type === 'ghost' ? 500 : 1000));
+
+                        if (now - enemy.lastAttack > attackCooldown) {
+                            enemy.lastAttack = now;
+
+                            // Skip damage if shield is active
+                            if (activePowerUp !== 'shield') {
+                                playerHealth -= enemy.attackDamage;
+                                updateHUD();
+
+                                if (playerHealth <= 0) {
+                                    gameOver();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check for power-up collisions
+                for (let i = powerUps.length - 1; i >= 0; i--) {
+                    const powerUp = powerUps[i];
+                    const distance = powerUp.mesh.position.distanceTo(camera.position);
+
+                    // Rotate power-up
+                    powerUp.mesh.rotation.y += 2 * delta;
+
+                    // Hover effect
+                    powerUp.mesh.position.y = 1 + Math.sin(Date.now() * 0.003) * 0.2;
+
+                    // Collect power-up if close enough
+                    if (distance < 1.5) {
+                        collectPowerUp(i);
+                    }
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Power-up functions
+        function spawnPowerUps() {
+            // Remove existing power-ups
+            powerUps.forEach(powerUp => scene.remove(powerUp.mesh));
+            powerUps = [];
+
+            // Spawn 2-3 power-ups
+            const count = 2 + Math.floor(Math.random() * 2);
+
+            for (let i = 0; i < count; i++) {
+                // Random position
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 10 + Math.random() * 20; // 10-30 units away
+
+                const x = Math.sin(angle) * distance;
+                const z = Math.cos(angle) * distance;
+
+                // Random power-up type
+                const types = ['rapidfire', 'shotgun', 'shield'];
+                const type = types[Math.floor(Math.random() * types.length)];
+
+                createPowerUp(x, z, type);
+            }
+        }
+
+        function createPowerUp(x, z, type) {
+            // Create power-up visual
+            let color;
+            let geometry;
+
+            if (type === 'rapidfire') {
+                color = neonGreen;
+                geometry = new THREE.OctahedronGeometry(0.5, 0);
+            } else if (type === 'shotgun') {
+                color = neonYellow;
+                geometry = new THREE.TetrahedronGeometry(0.5, 0);
+            } else if (type === 'shield') {
+                color = neonOrange;
+                geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            }
+
+            const material = new THREE.MeshStandardMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 0.8,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, 1, z);
+            scene.add(mesh);
+
+            // Add to power-ups array
+            powerUps.push({
+                mesh: mesh,
+                type: type
+            });
+        }
+
+        function collectPowerUp(index) {
+            const powerUp = powerUps[index];
+
+            // Remove from scene
+            scene.remove(powerUp.mesh);
+            powerUps.splice(index, 1);
+
+            // Clear any existing power-up
+            clearActivePowerUp();
+
+            // Activate new power-up
+            activePowerUp = powerUp.type;
+            powerUpTimeRemaining = 15; // 15 seconds duration
+
+            // Apply power-up effect
+            if (powerUp.type === 'rapidfire') {
+                activateRapidFire();
+            } else if (powerUp.type === 'shield') {
+                activateShield();
+            }
+
+            // Update HUD
+            updateHUD();
+        }
+
+        function clearActivePowerUp() {
+            // Clear rapid fire interval if active
+            if (rapidFireInterval) {
+                clearInterval(rapidFireInterval);
+                rapidFireInterval = null;
+            }
+
+            // Remove shield mesh if active
+            if (shieldMesh) {
+                camera.remove(shieldMesh);
+                shieldMesh = null;
+            }
+
+            activePowerUp = null;
+            powerUpTimeRemaining = 0;
+            updateHUD();
+        }
+
+        function activateRapidFire() {
+            // Auto-fire every 100ms
+            rapidFireInterval = setInterval(() => {
+                if (isGameRunning && !reloading && playerAmmo > 0) {
+                    shoot();
+                }
+            }, 100);
+        }
+
+        function activateShield() {
+            // Create shield visual effect around player
+            const geometry = new THREE.SphereGeometry(1, 16, 16);
+            const material = new THREE.MeshBasicMaterial({
+                color: neonOrange,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.DoubleSide
+            });
+
+            shieldMesh = new THREE.Mesh(geometry, material);
+            camera.add(shieldMesh);
+        }
+
+        function shotgunBlast() {
+            // Fire 5 bullets in a spread pattern
+            if (reloading || playerAmmo < 5) {
+                if (playerAmmo <= 0) {
+                    reload();
+                }
+                return;
+            }
+
+            // Decrease ammo
+            playerAmmo -= 5;
+            updateHUD();
+
+            // Get base direction
+            const baseDirection = new THREE.Vector3();
+            camera.getWorldDirection(baseDirection);
+
+            // Create an array of objects to test for intersection
+            const hitTestObjects = [];
+
+            // Add all enemy meshes and their children to the hit test array
+            enemies.forEach((enemy, index) => {
+                // For regular enemies, just add the mesh
+                if (enemy.type === 'regular') {
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+                }
+                // For ghost enemies, add all meshes and the hit area
+                else if (enemy.type === 'ghost') {
+                    // Add the parent group
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+
+                    // Add all children with a reference to the same enemy index
+                    enemy.mesh.children.forEach(child => {
+                        if (child.isMesh) {
+                            hitTestObjects.push({
+                                object: child,
+                                enemyIndex: index
+                            });
+                        }
+                    });
+
+                    // Add the hit area if it exists
+                    if (enemy.mesh.userData.hitArea) {
+                        hitTestObjects.push({
+                            object: enemy.mesh.userData.hitArea,
+                            enemyIndex: index
+                        });
+                    }
+                }
+                // For other enemy types (advanced, boss), add all children that have geometry
+                else {
+                    // Add the parent group with a reference to the enemy index
+                    hitTestObjects.push({
+                        object: enemy.mesh,
+                        enemyIndex: index
+                    });
+
+                    // Add all children with a reference to the same enemy index
+                    enemy.mesh.children.forEach(child => {
+                        if (child.isMesh) {
+                            hitTestObjects.push({
+                                object: child,
+                                enemyIndex: index
+                            });
+                        }
+                    });
+                }
+            });
+
+            // Extract just the objects for the raycaster
+            const objectsToTest = hitTestObjects.map(item => item.object);
+
+            // Create 5 bullets with spread
+            for (let i = 0; i < 5; i++) {
+                // Create bullet visual
+                const bulletGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+                const bulletMaterial = new THREE.MeshBasicMaterial({ color: neonYellow });
+                const bulletMesh = new THREE.Mesh(bulletGeometry, bulletMaterial);
+
+                // Position bullet at camera
+                bulletMesh.position.copy(camera.position);
+
+                // Calculate spread direction
+                const spread = 0.1; // Amount of spread
+                const direction = baseDirection.clone();
+
+                // Add random spread (except for center bullet)
+                if (i !== 2) {
+                    direction.x += (Math.random() - 0.5) * spread;
+                    direction.y += (Math.random() - 0.5) * spread;
+                    direction.z += (Math.random() - 0.5) * spread;
+                    direction.normalize();
+                }
+
+                scene.add(bulletMesh);
+
+                // Add to bullets array
+                bullets.push({
+                    mesh: bulletMesh,
+                    direction: direction,
+                    distance: 0
+                });
+
+                // Use raycaster for instant hit detection
+                const tempRaycaster = new THREE.Raycaster(camera.position, direction);
+                const hits = tempRaycaster.intersectObjects(objectsToTest, false);
+
+                if (hits.length > 0) {
+                    const hit = hits[0];
+
+                    // Find which enemy was hit by looking up the object in our hitTestObjects array
+                    const hitInfo = hitTestObjects.find(item =>
+                        item.object === hit.object ||
+                        (hit.object.parent && item.object === hit.object.parent)
+                    );
+
+                    if (hitInfo) {
+                        damageEnemy(hitInfo.enemyIndex, 15); // 15 damage per shotgun pellet
+                    }
+                }
+            }
+        }
+
+        // Initialize the game when the page loads
+        window.onload = init;
+    </script>
+</body>
+
+</html>
